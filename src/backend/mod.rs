@@ -1,5 +1,6 @@
 pub mod settings;
 
+use crate::serial_tty::{self, SerialTtyOptions};
 use crate::types::Size;
 use alacritty_terminal::event::{
     Event, EventListener, Notify, OnResize, WindowSize,
@@ -188,6 +189,60 @@ impl TerminalBackend {
                     }
                 }
             })?;
+
+        Ok(Self {
+            id,
+            url_regex,
+            term: term.clone(),
+            size: terminal_size,
+            notifier,
+            last_content: initial_content,
+        })
+    }
+
+    pub fn new_serial(
+        id: u64,
+        app_context: egui::Context,
+        pty_event_proxy_sender: Sender<(u64, PtyEvent)>,
+        serial_settings: SerialTtyOptions,
+    ) -> Result<Self> {
+        let config = term::Config::default();
+        let terminal_size = TerminalSize::default();
+
+        let tty = serial_tty::new(&serial_settings, terminal_size.into(), id)?;
+
+        let (event_sender, event_receiver) = mpsc::channel();
+        let event_proxy = EventProxy(event_sender);
+        let mut term = Term::new(config, &terminal_size, event_proxy.clone());
+        let initial_content = RenderableContent {
+            grid: term.grid().clone(),
+            selectable_range: None,
+            terminal_mode: *term.mode(),
+            terminal_size,
+            cursor: term.grid_mut().cursor_cell().clone(),
+            hovered_hyperlink: None,
+        };
+        let term = Arc::new(FairMutex::new(term));
+        let pty_event_loop =
+            EventLoop::new(term.clone(), event_proxy, tty, false, false)?;
+        let notifier = Notifier(pty_event_loop.channel());
+        let url_regex = RegexSearch::new(r#"(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file://|git://|ssh:|ftp://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>"\s{-}\^⟨⟩`]+"#).unwrap();
+        let _pty_event_loop_thread = pty_event_loop.spawn();
+        let _pty_event_subscription = std::thread::Builder::new()
+                .name(format!("pty_event_subscription_{}", id))
+                .spawn(move || loop {
+                    if let Ok(event) = event_receiver.recv() {
+                        pty_event_proxy_sender
+                            .send((id, event.clone()))
+                            .unwrap_or_else(|_| {
+                                panic!("pty_event_subscription_{}: sending PtyEvent is failed", id)
+                            });
+                        app_context.clone().request_repaint();
+                        if let Event::Exit = event {
+                            break;
+                        }
+                    }
+                })?;
 
         Ok(Self {
             id,
