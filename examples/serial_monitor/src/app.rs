@@ -1,8 +1,7 @@
 use egui::{Color32, Vec2};
-use egui_term::{
-    PtyEvent, SerialTtyOptions, TerminalBackend, TerminalTheme, TerminalView,
-};
-use serialport::{DataBits, FlowControl, Parity, StopBits};
+use egui_term::{PtyEvent, SerialMonitorView, TerminalTheme};
+use egui_term::{SerialMonitorBackend, SerialTtyOptions};
+use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 use std::sync::mpsc::{Receiver, Sender};
 
 macro_rules! selectable_add {
@@ -17,7 +16,7 @@ macro_rules! selectable_add {
     };
 }
 pub struct App {
-    terminal_backend: Option<TerminalBackend>,
+    serial_monitor_backend: Option<SerialMonitorBackend>,
     terminal_theme: TerminalTheme,
     tty_list: Vec<String>,
     tty_conn: SerialTtyOptions,
@@ -30,7 +29,7 @@ impl App {
     pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
         let (pty_proxy_sender, pty_proxy_receiver) = std::sync::mpsc::channel();
 
-        let tty_list: Vec<String> = serialport::available_ports()
+        let tty_list: Vec<String> = mio_serial::available_ports()
             .unwrap()
             .iter()
             .map(|x| x.port_name.clone())
@@ -41,7 +40,7 @@ impl App {
             .set_baud_rate(9600);
 
         Self {
-            terminal_backend: None,
+            serial_monitor_backend: None,
             terminal_theme: TerminalTheme::default(),
             tty_list,
             tty_conn,
@@ -157,7 +156,7 @@ impl eframe::App for App {
                 ui.add_space(15.0);
 
                 if ui.button("Open").clicked() {
-                    let new_backend = TerminalBackend::new_serial(
+                    let new_backend = SerialMonitorBackend::new(
                         0,
                         ctx.clone(),
                         self.pty_proxy_sender.clone(),
@@ -165,18 +164,18 @@ impl eframe::App for App {
                     );
 
                     if let Ok(backend) = new_backend {
-                        self.terminal_backend = Some(backend);
+                        self.serial_monitor_backend = Some(backend);
                         self.last_failed = None;
                     } else {
                         self.last_failed = Some(std::time::Instant::now())
                     }
                 }
                 if ui.button("Close").clicked() {
-                    self.terminal_backend = None;
+                    self.serial_monitor_backend = None;
                     self.last_failed = None;
                 }
                 if ui.button("Refresh List").clicked() {
-                    self.tty_list = serialport::available_ports()
+                    self.tty_list = mio_serial::available_ports()
                         .unwrap()
                         .iter()
                         .map(|x| x.port_name.clone())
@@ -186,14 +185,17 @@ impl eframe::App for App {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            if let Some(terminal_backend) = &mut self.terminal_backend {
-                let terminal = TerminalView::new(ui, terminal_backend)
-                    .set_focus(true)
-                    .set_theme(self.terminal_theme.clone())
-                    .set_size(Vec2::new(
-                        ui.available_width(),
-                        ui.available_height(),
-                    ));
+            if let Some(serial_monitor_backend) =
+                &mut self.serial_monitor_backend
+            {
+                let terminal =
+                    SerialMonitorView::new(ui, serial_monitor_backend)
+                        .set_focus(true)
+                        .set_theme(self.terminal_theme.clone())
+                        .set_size(Vec2::new(
+                            ui.available_width(),
+                            ui.available_height(),
+                        ));
 
                 ui.add(terminal);
             } else if let Some(failed_time) = self.last_failed {

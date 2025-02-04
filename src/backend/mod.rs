@@ -1,11 +1,11 @@
-pub mod settings;
-
-use crate::serial_tty::{self, SerialTtyOptions};
+use crate::serial_tty::event_loop::{
+    SerialEventLoop, SerialMsg, SerialNotifier,
+};
 use crate::types::Size;
+use crate::{serial_tty, SerialTtyOptions};
 use alacritty_terminal::event::{
     Event, EventListener, Notify, OnResize, WindowSize,
 };
-use alacritty_terminal::event_loop::{EventLoop, Msg, Notifier};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Column, Direction, Line, Point, Side};
 use alacritty_terminal::selection::{
@@ -16,9 +16,8 @@ use alacritty_terminal::term::search::{Match, RegexIter, RegexSearch};
 use alacritty_terminal::term::{
     self, cell::Cell, test::TermSize, viewport_to_point, Term, TermMode,
 };
-use alacritty_terminal::{tty, Grid};
+use alacritty_terminal::Grid;
 use egui::Modifiers;
-use settings::BackendSettings;
 use std::borrow::Cow;
 use std::cmp::min;
 use std::io::Result;
@@ -134,73 +133,17 @@ impl From<TerminalSize> for WindowSize {
     }
 }
 
-pub struct TerminalBackend {
+pub struct SerialMonitorBackend {
     pub id: u64,
     pub url_regex: RegexSearch,
     term: Arc<FairMutex<Term<EventProxy>>>,
     size: TerminalSize,
-    notifier: Notifier,
+    notifier: SerialNotifier,
     last_content: RenderableContent,
 }
 
-impl TerminalBackend {
+impl SerialMonitorBackend {
     pub fn new(
-        id: u64,
-        app_context: egui::Context,
-        pty_event_proxy_sender: Sender<(u64, PtyEvent)>,
-        settings: BackendSettings,
-    ) -> Result<Self> {
-        let pty_config = tty::Options {
-            shell: Some(tty::Shell::new(settings.shell, vec![])),
-            ..tty::Options::default()
-        };
-        let config = term::Config::default();
-        let terminal_size = TerminalSize::default();
-        let pty = tty::new(&pty_config, terminal_size.into(), id)?;
-        let (event_sender, event_receiver) = mpsc::channel();
-        let event_proxy = EventProxy(event_sender);
-        let mut term = Term::new(config, &terminal_size, event_proxy.clone());
-        let initial_content = RenderableContent {
-            grid: term.grid().clone(),
-            selectable_range: None,
-            terminal_mode: *term.mode(),
-            terminal_size,
-            cursor: term.grid_mut().cursor_cell().clone(),
-            hovered_hyperlink: None,
-        };
-        let term = Arc::new(FairMutex::new(term));
-        let pty_event_loop =
-            EventLoop::new(term.clone(), event_proxy, pty, false, false)?;
-        let notifier = Notifier(pty_event_loop.channel());
-        let url_regex = RegexSearch::new(r#"(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file://|git://|ssh:|ftp://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>"\s{-}\^⟨⟩`]+"#).unwrap();
-        let _pty_event_loop_thread = pty_event_loop.spawn();
-        let _pty_event_subscription = std::thread::Builder::new()
-            .name(format!("pty_event_subscription_{}", id))
-            .spawn(move || loop {
-                if let Ok(event) = event_receiver.recv() {
-                    pty_event_proxy_sender
-                        .send((id, event.clone()))
-                        .unwrap_or_else(|_| {
-                            panic!("pty_event_subscription_{}: sending PtyEvent is failed", id)
-                        });
-                    app_context.clone().request_repaint();
-                    if let Event::Exit = event {
-                        break;
-                    }
-                }
-            })?;
-
-        Ok(Self {
-            id,
-            url_regex,
-            term: term.clone(),
-            size: terminal_size,
-            notifier,
-            last_content: initial_content,
-        })
-    }
-
-    pub fn new_serial(
         id: u64,
         app_context: egui::Context,
         pty_event_proxy_sender: Sender<(u64, PtyEvent)>,
@@ -223,11 +166,11 @@ impl TerminalBackend {
             hovered_hyperlink: None,
         };
         let term = Arc::new(FairMutex::new(term));
-        let pty_event_loop =
-            EventLoop::new(term.clone(), event_proxy, tty, false, false)?;
-        let notifier = Notifier(pty_event_loop.channel());
+        let serial_event_loop =
+            SerialEventLoop::new(term.clone(), event_proxy, tty, false, false)?;
+        let notifier = SerialNotifier(serial_event_loop.channel());
         let url_regex = RegexSearch::new(r#"(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file://|git://|ssh:|ftp://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>"\s{-}\^⟨⟩`]+"#).unwrap();
-        let _pty_event_loop_thread = pty_event_loop.spawn();
+        let _pty_event_loop_thread = serial_event_loop.spawn();
         let _pty_event_subscription = std::thread::Builder::new()
                 .name(format!("pty_event_subscription_{}", id))
                 .spawn(move || loop {
@@ -615,9 +558,9 @@ impl Default for RenderableContent {
     }
 }
 
-impl Drop for TerminalBackend {
+impl Drop for SerialMonitorBackend {
     fn drop(&mut self) {
-        let _ = self.notifier.0.send(Msg::Shutdown);
+        let _ = self.notifier.0.send(SerialMsg::Shutdown);
     }
 }
 

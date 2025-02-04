@@ -14,11 +14,13 @@ alacritty_terminal = "0.24.1"
 anyhow = "1.0.95"
 open = "5.3.2"
 
-serde = { version = "1", features = ["derive", "rc"] }
-serialport = { version = "4.7.0", features = ["libudev", "serde", "usbportinfo-interface"] }
+serde = { version = "1", features = ["derive", "rc", "derive"] }
 log = "0.4"
 libc = "0.2"
 polling = "3.0.0"
+mio-serial = { version = "5.0.6", features = ["libudev", "serde"] }
+mio = { version = "*"}
+
 [target.'cfg(unix)'.dependencies]
 rustix-openpty = "0.1.1"
 signal-hook = "0.3.10"

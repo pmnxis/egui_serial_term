@@ -10,7 +10,7 @@ use egui::{Align2, Painter, Pos2, Rect, Response, Rounding, Stroke, Vec2};
 use egui::{Id, PointerButton};
 
 use crate::backend::BackendCommand;
-use crate::backend::TerminalBackend;
+use crate::backend::SerialMonitorBackend;
 use crate::backend::{LinkAction, MouseButton, SelectionType};
 use crate::bindings::Binding;
 use crate::bindings::{BindingAction, BindingsLayout, InputKind};
@@ -28,23 +28,23 @@ enum InputAction {
 }
 
 #[derive(Clone, Default, Debug)]
-pub struct TerminalViewState {
+pub struct SerialMonitorViewState {
     is_dragged: bool,
     scroll_pixels: f32,
     current_mouse_position_on_grid: TerminalGridPoint,
 }
 
-pub struct TerminalView<'a> {
+pub struct SerialMonitorView<'a> {
     widget_id: Id,
     has_focus: bool,
     size: Vec2,
-    backend: &'a mut TerminalBackend,
+    backend: &'a mut SerialMonitorBackend,
     font: TerminalFont,
     theme: TerminalTheme,
     bindings_layout: BindingsLayout,
 }
 
-impl Widget for TerminalView<'_> {
+impl Widget for SerialMonitorView<'_> {
     fn ui(self, ui: &mut egui::Ui) -> Response {
         let (layout, painter) =
             ui.allocate_painter(self.size, egui::Sense::click());
@@ -52,7 +52,7 @@ impl Widget for TerminalView<'_> {
         let widget_id = self.widget_id;
         let mut state = ui.memory(|m| {
             m.data
-                .get_temp::<TerminalViewState>(widget_id)
+                .get_temp::<SerialMonitorViewState>(widget_id)
                 .unwrap_or_default()
         });
 
@@ -66,8 +66,11 @@ impl Widget for TerminalView<'_> {
     }
 }
 
-impl<'a> TerminalView<'a> {
-    pub fn new(ui: &mut egui::Ui, backend: &'a mut TerminalBackend) -> Self {
+impl<'a> SerialMonitorView<'a> {
+    pub fn new(
+        ui: &mut egui::Ui,
+        backend: &'a mut SerialMonitorBackend,
+    ) -> Self {
         let widget_id = ui.make_persistent_id(format!(
             "{}{}",
             EGUI_TERM_WIDGET_ID_PREFIX, backend.id
@@ -139,7 +142,7 @@ impl<'a> TerminalView<'a> {
     fn process_input(
         self,
         layout: &Response,
-        state: &mut TerminalViewState,
+        state: &mut SerialMonitorViewState,
     ) -> Self {
         if !layout.has_focus() || !layout.contains_pointer() {
             return self;
@@ -215,7 +218,7 @@ impl<'a> TerminalView<'a> {
 
     fn show(
         self,
-        state: &mut TerminalViewState,
+        state: &mut SerialMonitorViewState,
         layout: &Response,
         painter: &Painter,
     ) {
@@ -350,7 +353,7 @@ impl<'a> TerminalView<'a> {
 
 fn process_keyboard_event(
     event: egui::Event,
-    backend: &TerminalBackend,
+    backend: &SerialMonitorBackend,
     bindings_layout: &BindingsLayout,
     modifiers: Modifiers,
 ) -> InputAction {
@@ -384,7 +387,7 @@ fn process_keyboard_event(
 fn process_text_event(
     text: &str,
     modifiers: Modifiers,
-    backend: &TerminalBackend,
+    backend: &SerialMonitorBackend,
     bindings_layout: &BindingsLayout,
 ) -> InputAction {
     if let Some(key) = Key::from_name(text) {
@@ -408,7 +411,7 @@ fn process_text_event(
 }
 
 fn process_keyboard_key(
-    backend: &TerminalBackend,
+    backend: &SerialMonitorBackend,
     bindings_layout: &BindingsLayout,
     key: Key,
     modifiers: Modifiers,
@@ -441,7 +444,7 @@ fn process_keyboard_key(
 }
 
 fn process_mouse_wheel(
-    state: &mut TerminalViewState,
+    state: &mut SerialMonitorViewState,
     font_size: f32,
     unit: MouseWheelUnit,
     delta: Vec2,
@@ -466,9 +469,9 @@ fn process_mouse_wheel(
 }
 
 fn process_button_click(
-    state: &mut TerminalViewState,
+    state: &mut SerialMonitorViewState,
     layout: &Response,
-    backend: &TerminalBackend,
+    backend: &SerialMonitorBackend,
     bindings_layout: &BindingsLayout,
     button: PointerButton,
     position: Pos2,
@@ -490,9 +493,9 @@ fn process_button_click(
 }
 
 fn process_left_button(
-    state: &mut TerminalViewState,
+    state: &mut SerialMonitorViewState,
     layout: &Response,
-    backend: &TerminalBackend,
+    backend: &SerialMonitorBackend,
     bindings_layout: &BindingsLayout,
     position: Pos2,
     modifiers: &Modifiers,
@@ -521,7 +524,7 @@ fn process_left_button(
 }
 
 fn process_left_button_pressed(
-    state: &mut TerminalViewState,
+    state: &mut SerialMonitorViewState,
     layout: &Response,
     position: Pos2,
 ) -> InputAction {
@@ -530,9 +533,9 @@ fn process_left_button_pressed(
 }
 
 fn process_left_button_released(
-    state: &mut TerminalViewState,
+    state: &mut SerialMonitorViewState,
     layout: &Response,
-    backend: &TerminalBackend,
+    backend: &SerialMonitorBackend,
     bindings_layout: &BindingsLayout,
     position: Pos2,
     modifiers: &Modifiers,
@@ -579,21 +582,22 @@ fn build_start_select_command(
 }
 
 fn process_mouse_move(
-    state: &mut TerminalViewState,
+    state: &mut SerialMonitorViewState,
     layout: &Response,
-    backend: &TerminalBackend,
+    backend: &SerialMonitorBackend,
     position: Pos2,
     modifiers: &Modifiers,
 ) -> Vec<InputAction> {
     let terminal_content = backend.last_content();
     let cursor_x = position.x - layout.rect.min.x;
     let cursor_y = position.y - layout.rect.min.y;
-    state.current_mouse_position_on_grid = TerminalBackend::selection_point(
-        cursor_x,
-        cursor_y,
-        &terminal_content.terminal_size,
-        terminal_content.grid.display_offset(),
-    );
+    state.current_mouse_position_on_grid =
+        SerialMonitorBackend::selection_point(
+            cursor_x,
+            cursor_y,
+            &terminal_content.terminal_size,
+            terminal_content.grid.display_offset(),
+        );
 
     let mut actions = vec![];
     // Handle command or selection update based on terminal mode and modifiers
