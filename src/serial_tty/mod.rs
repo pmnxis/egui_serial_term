@@ -29,6 +29,9 @@ const DEFAULT_TTY_PATH: &str = "COM3";
 
 const DEFAULT_BAUDRATE: u32 = 115200;
 
+#[cfg(any(target_os = "macos", all(test, target_os = "macos")))]
+mod prolific_apple_patch;
+
 pub mod event_loop;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -159,22 +162,27 @@ pub fn new(
     _window_id: u64,
 ) -> Result<SerialTty> {
     if let Ok(ports) = mio_serial::available_ports() {
-        if let Some(matched) = ports.iter().find(|x| x.port_name == config.name)
+        let stream = if let Some(matched) =
+            ports.iter().find(|x| x.port_name == config.name)
         {
             match &matched.port_type {
                 mio_serial::SerialPortType::UsbPort(u) => {
-                    println!(
-                        "mfn : {}",
-                        u.manufacturer.clone().unwrap_or("".to_owned())
-                    );
+                    let mfn = u.manufacturer.clone().unwrap_or("".to_owned());
+                    println!("mfn : {}", mfn);
+                    #[cfg(any(target_os = "macos", target_os = "ios",))]
+                    if mfn.contains("Prolific") {
+                        println!("Prolific Device on macOS should be handle with different ways.");
+                        prolific_apple_patch::open(config)?
+                    } else {
+                        mio_serial::SerialStream::open(&config.in_to_builder())?
+                    }
                 },
-                _ => {},
+                _ => mio_serial::SerialStream::open(&config.in_to_builder())?,
             }
         } else {
             println!("Not Found");
-        }
-
-        let stream = mio_serial::SerialStream::open(&config.in_to_builder())?;
+            Err(Error::new(ErrorKind::InvalidData, "Unknown SerialTty Call"))?
+        };
 
         Ok(SerialTty { stream })
     } else {

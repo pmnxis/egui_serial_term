@@ -184,6 +184,7 @@ dependencies = [
  "log",
  "mio",
  "mio-serial",
+ "nix 0.26.4",
  "open",
  "polling",
  "rustix-openpty",
