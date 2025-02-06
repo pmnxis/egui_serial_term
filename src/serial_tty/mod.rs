@@ -170,7 +170,7 @@ pub fn new(
                     let mfn = u.manufacturer.clone().unwrap_or("".to_owned());
                     println!("mfn : {}", mfn);
                     #[cfg(any(target_os = "macos", target_os = "ios",))]
-                    if mfn.contains("Prolific") {
+                    if mfn.to_lowercase().contains("prolific") {
                         println!("Prolific Device on macOS should be handle with different ways.");
                         prolific_apple_patch::open(config)?
                     } else {

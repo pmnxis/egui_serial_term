@@ -62,14 +62,25 @@ impl eframe::App for App {
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("tty_name")
                     .selected_text(self.tty_conn.name.clone())
-                    .width(40.0)
+                    .width(110.0)
+                    .height(
+                        /* https://github.com/emilk/egui/issues/5138 */
+                        (ui.spacing().interact_size.y
+                            * (1.0 + self.tty_list.len() as f32))
+                            .max(200.0),
+                    )
+                    .wrap_mode(egui::TextWrapMode::Extend)
                     .show_ui(ui, |ui| {
-                        for dev in self.tty_list.iter() {
-                            ui.selectable_value(
-                                &mut self.tty_conn.name,
-                                dev.clone(),
-                                dev,
-                            );
+                        if self.tty_list.is_empty() {
+                            ui.label("Missing Devices");
+                        } else {
+                            for dev in self.tty_list.iter() {
+                                ui.selectable_value(
+                                    &mut self.tty_conn.name,
+                                    dev.clone(),
+                                    dev,
+                                );
+                            }
                         }
                     });
 
@@ -180,6 +191,9 @@ impl eframe::App for App {
                         .iter()
                         .map(|x| x.port_name.clone())
                         .collect();
+
+                    println!("listing serial port");
+                    println!("{:?}", self.tty_list);
                 }
             });
         });
