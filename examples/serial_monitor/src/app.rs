@@ -1,4 +1,4 @@
-use egui::{Color32, Vec2};
+use egui::{Color32, RichText, Vec2};
 use egui_term::{PtyEvent, SerialMonitorView, TerminalTheme};
 use egui_term::{SerialMonitorBackend, SerialTtyOptions};
 use mio_serial::{DataBits, FlowControl, Parity, StopBits};
@@ -166,7 +166,34 @@ impl eframe::App for App {
 
                 ui.add_space(15.0);
 
-                if ui.button("Open").clicked() {
+                if ui.button("Refresh List").clicked() {
+                    self.tty_list = mio_serial::available_ports()
+                        .unwrap()
+                        .iter()
+                        .map(|x| x.port_name.clone())
+                        .collect();
+
+                    println!("listing serial port");
+                    println!("{:?}", self.tty_list);
+                }
+
+                if self.serial_monitor_backend.is_some() {
+                    if ui.button("CLOSE").clicked() {
+                        self.serial_monitor_backend = None;
+                        self.last_failed = None;
+                    }
+
+                    if ui.button("Send ^C").clicked() {
+                        if let Some(backend) =
+                            self.serial_monitor_backend.as_mut()
+                        {
+                            backend.write(&[0x03]);
+                        }
+                    }
+                } else if ui
+                    .button(RichText::new("OPEN ").color(Color32::GREEN))
+                    .clicked()
+                {
                     let new_backend = SerialMonitorBackend::new(
                         0,
                         ctx.clone(),
@@ -180,20 +207,6 @@ impl eframe::App for App {
                     } else {
                         self.last_failed = Some(std::time::Instant::now())
                     }
-                }
-                if ui.button("Close").clicked() {
-                    self.serial_monitor_backend = None;
-                    self.last_failed = None;
-                }
-                if ui.button("Refresh List").clicked() {
-                    self.tty_list = mio_serial::available_ports()
-                        .unwrap()
-                        .iter()
-                        .map(|x| x.port_name.clone())
-                        .collect();
-
-                    println!("listing serial port");
-                    println!("{:?}", self.tty_list);
                 }
             });
         });

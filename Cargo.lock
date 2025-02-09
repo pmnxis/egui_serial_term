@@ -190,6 +190,7 @@ dependencies = [
  "rustix-openpty",
  "serde",
  "signal-hook",
+ "winapi",
 ]
 
 [[package]]

@@ -476,7 +476,7 @@ impl SerialMonitorBackend {
         }
     }
 
-    fn write<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
+    pub fn write<I: Into<Cow<'static, [u8]>>>(&self, input: I) {
         self.notifier.notify(input);
     }
 

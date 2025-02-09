@@ -37,6 +37,9 @@ pub mod event_loop;
 #[cfg(unix)]
 pub(crate) mod unix;
 
+#[cfg(windows)]
+pub(crate) mod windows;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct SerialTtyOptions {
     pub name: String,
@@ -46,6 +49,7 @@ pub struct SerialTtyOptions {
     pub parity: mio_serial::Parity,
     pub stop_bits: mio_serial::StopBits,
     pub timeout: std::time::Duration,
+    pub dtr_on_open: Option<bool>,
 }
 
 impl Default for SerialTtyOptions {
@@ -57,7 +61,8 @@ impl Default for SerialTtyOptions {
             flow_control: mio_serial::FlowControl::None,
             parity: mio_serial::Parity::None,
             stop_bits: mio_serial::StopBits::One,
-            timeout: std::time::Duration::from_millis(100),
+            timeout: std::time::Duration::from_millis(0),
+            dtr_on_open: Some(true),
         }
     }
 }
@@ -70,6 +75,7 @@ impl SerialTtyOptions {
             .parity(self.parity)
             .stop_bits(self.stop_bits)
             .timeout(self.timeout)
+            .dtr_on_open(self.dtr_on_open.unwrap_or(true))
     }
 
     #[allow(clippy::assigning_clones)]
@@ -158,6 +164,21 @@ impl OnResize for SerialTty {
     }
 }
 
+fn open(
+    config: &SerialTtyOptions,
+) -> mio_serial::Result<mio_serial::SerialStream> {
+    #[cfg(unix)]
+    {
+        let stream = mio_serial::SerialStream::open(&config.in_to_builder())?;
+        unix::set_nonblocking_serial(&stream);
+        Ok(stream)
+    }
+    #[cfg(windows)]
+    {
+        windows::open(config)
+    }
+}
+
 /// Create a new TTY and return a handle to interact with it.
 pub fn new(
     config: &SerialTtyOptions,
@@ -171,24 +192,25 @@ pub fn new(
             match &matched.port_type {
                 mio_serial::SerialPortType::UsbPort(u) => {
                     let mfn = u.manufacturer.clone().unwrap_or("".to_owned());
-                    println!("mfn : {}", mfn);
+                    log::info!("mfn : {}", mfn);
+
                     #[cfg(any(target_os = "macos", target_os = "ios",))]
                     if mfn.to_lowercase().contains("prolific") {
                         println!("Prolific Device on macOS should be handle with different ways.");
                         prolific_apple_patch::open(config)?
                     } else {
-                        mio_serial::SerialStream::open(&config.in_to_builder())?
+                        open(config)?
                     }
+
+                    #[cfg(not(any(target_os = "macos", target_os = "ios",)))]
+                    open(config)?
                 },
-                _ => mio_serial::SerialStream::open(&config.in_to_builder())?,
+                _ => open(config)?,
             }
         } else {
             println!("Not Found");
             Err(Error::new(ErrorKind::InvalidData, "Unknown SerialTty Call"))?
         };
-
-        #[cfg(unix)]
-        unix::set_nonblocking_serial(&stream);
 
         Ok(SerialTty { stream })
     } else {
