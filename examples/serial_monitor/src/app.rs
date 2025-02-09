@@ -36,8 +36,8 @@ impl App {
             .collect();
 
         let tty_conn = SerialTtyOptions::default()
-            .set_name(tty_list.first().map_or("".to_owned(), |x| x.clone()))
-            .set_baud_rate(9600);
+            .set_name(tty_list.last().map_or("".to_owned(), |x| x.clone()))
+            .set_baud_rate(115200);
 
         Self {
             serial_monitor_backend: None,

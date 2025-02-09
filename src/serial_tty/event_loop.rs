@@ -6,11 +6,12 @@ use std::fmt::{self, Display, Formatter};
 use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
 use std::sync::mpsc::{self, Receiver, Sender, TryRecvError};
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::Instant;
 
 use log::error;
+use mio::Registry;
 use polling::Event as PollingEvent;
 
 use alacritty_terminal::event::{self, Event, OnResize, WindowSize};
@@ -52,13 +53,14 @@ pub enum SerialMsg {
 /// state.
 
 pub struct SerialEventLoop<U: alacritty_terminal::event::EventListener> {
-    poll: Arc<RwLock<mio::Poll>>,
+    poll: mio::Poll,
+    registry: Arc<Registry>,
     tty: SerialTty,
     rx: PeekableReceiver<SerialMsg>,
     tx: Sender<SerialMsg>,
     terminal: Arc<FairMutex<Term<U>>>,
     event_proxy: U,
-    drain_on_exit: bool,
+    _drain_on_exit: bool,
     ref_test: bool,
 }
 
@@ -70,20 +72,27 @@ where
         terminal: Arc<FairMutex<Term<U>>>,
         event_proxy: U,
         tty: SerialTty,
-        drain_on_exit: bool,
+        _drain_on_exit: bool,
         ref_test: bool,
     ) -> std::io::Result<SerialEventLoop<U>> {
         let (tx, rx) = mpsc::channel();
-        let poll = Arc::new(RwLock::new(mio::Poll::new()?));
+        // let poll = Arc::new(RwLock::new(mio::Poll::new()?));
+        let poll = mio::Poll::new()?;
+        let registry = Arc::new(
+            poll.registry()
+                .try_clone()
+                .expect("Failed to create shared poller registry"),
+        );
 
         Ok(SerialEventLoop {
             poll,
+            registry,
             tty,
             rx: PeekableReceiver::new(rx),
             tx,
             terminal,
             event_proxy,
-            drain_on_exit,
+            _drain_on_exit,
             ref_test,
         })
     }
@@ -91,7 +100,7 @@ where
     pub fn channel(&self) -> SerialEventLoopSender {
         SerialEventLoopSender {
             sender: self.tx.clone(),
-            poller: self.poll.clone(),
+            poller: self.registry.clone(),
         }
     }
 
@@ -131,8 +140,6 @@ where
 
         loop {
             // Read from the PTY.
-
-            // match self.tty.reader().read(&mut buf[unprocessed..]) {
             match self.tty.read(&mut buf[unprocessed..]) {
                 // This is received on Windows/macOS when no more data is readable from the PTY.
                 Ok(0) if unprocessed == 0 => break,
@@ -234,20 +241,15 @@ where
             let mut interest = PollingEvent::readable(0);
 
             // Register TTY through EventedRW interface.
-            if let Err(()) = self.poll.read().map_or(
-                {
-                    error!("rwlock error on init");
-                    Err(())
-                },
-                |p| {
-                    p.registry()
-                        .register(&mut self.tty.stream, SERIAL_TOKEN, INTERESTS)
-                        .map_err(|e| {
-                            error!("Event loop registration error: {}", e);
-                            ()
-                        })
-                },
-            ) {
+            if let Err(()) = self
+                .poll
+                .registry()
+                .register(&mut self.tty.stream, SERIAL_TOKEN, INTERESTS)
+                .map_err(|e| {
+                    error!("Event loop registration error: {}", e);
+                    ()
+                })
+            {
                 return (self, state);
             }
 
@@ -271,21 +273,14 @@ where
 
                 events.clear();
 
-                // if let Err(err) = self.poll.wait(&mut events, timeout) {
-
-                if let Ok(mut p) = self.poll.write() {
-                    if let Err(err) = p.poll(&mut events, timeout) {
-                        match err.kind() {
-                            ErrorKind::Interrupted => continue,
-                            _ => {
-                                error!("Event loop polling error: {}", err);
-                                break 'event_loop;
-                            },
-                        }
+                if let Err(err) = self.poll.poll(&mut events, timeout) {
+                    match err.kind() {
+                        ErrorKind::Interrupted => continue,
+                        _ => {
+                            error!("Event loop polling error: {}", err);
+                            break 'event_loop;
+                        },
                     }
-                } else {
-                    error!("rwlock error while poll events");
-                    break 'event_loop;
                 }
 
                 // Handle synchronized update timeout.
@@ -352,33 +347,20 @@ where
                 if needs_write != interest.writable {
                     interest.writable = needs_write;
 
-                    // Re-register with new interest.
-                    // self.tty
-                    //     .reregister(&self.poll, interest, poll_opts)
-                    //     .unwrap();
-
-                    if let Ok(p) = self.poll.read() {
-                        p.registry()
-                            .reregister(
-                                &mut self.tty.stream,
-                                SERIAL_TOKEN,
-                                INTERESTS,
-                            )
-                            .unwrap();
-                    } else {
-                        error!("rwlock error while register tty write");
-                        break 'event_loop;
-                    }
+                    self.poll
+                        .registry()
+                        .reregister(
+                            &mut self.tty.stream,
+                            SERIAL_TOKEN,
+                            INTERESTS,
+                        )
+                        .unwrap();
                 }
             }
 
             // The evented instances are not dropped here so deregister them explicitly.
-            // let _ = self.tty.deregister(&self.poll);
-            if let Ok(p) = self.poll.read() {
-                let _ = p.registry().deregister(&mut self.tty.stream);
-            } else {
-                error!("rwlock error while deregister");
-            }
+            let _ = self.poll.registry().deregister(&mut self.tty.stream);
+
             (self, state)
         })
     }
@@ -444,14 +426,14 @@ impl std::error::Error for SerialEventLoopSendError {
 pub struct SerialEventLoopSender {
     sender: Sender<SerialMsg>,
     #[allow(dead_code)]
-    poller: Arc<RwLock<mio::Poll>>,
+    poller: Arc<Registry>,
 }
 
 impl SerialEventLoopSender {
     #[allow(dead_code)]
     pub(crate) fn new(
         sender: Sender<SerialMsg>,
-        poller: Arc<RwLock<mio::Poll>>,
+        poller: Arc<Registry>,
     ) -> SerialEventLoopSender {
         Self { sender, poller }
     }

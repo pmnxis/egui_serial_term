@@ -212,6 +212,13 @@ pub fn open(
 
     termios::set_termios(fd, &mut termios, config.baud_rate)?; // Acutal patched area
 
+    unsafe {
+        use libc::{fcntl, F_GETFL, F_SETFL, O_NONBLOCK};
+
+        let res = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+        assert_eq!(res, 0);
+    }
+
     // rust don't allow access private member as force
     let dummy_struct = Box::new(DummyTtyPort {
         fd,
