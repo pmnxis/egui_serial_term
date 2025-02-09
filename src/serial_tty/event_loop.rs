@@ -1,4 +1,5 @@
 //! The main event loop which performs I/O on the pseudoterminal.
+//! Fork and modified from event_loop.rs from alacritty_terminal.
 
 use std::borrow::Cow;
 use std::collections::VecDeque;
@@ -17,16 +18,15 @@ use polling::Event as PollingEvent;
 use alacritty_terminal::event::{self, Event, OnResize, WindowSize};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::Term;
-// use alacritty_terminal::vte::ansi;
 use alacritty_terminal::thread;
 use alacritty_terminal::vte::ansi;
 
 use crate::serial_tty::SerialTty;
 
-/// Max bytes to read from the PTY before forced terminal synchronization.
+/// Max bytes to read from the TTY before forced terminal synchronization.
 pub(crate) const READ_BUFFER_SIZE: usize = 0x10_0000;
 
-/// Max bytes to read from the PTY while the terminal is locked.
+/// Max bytes to read from the TTY while the terminal is locked.
 pub(crate) const MAX_LOCKED_READ: usize = u16::MAX as usize;
 
 const SERIAL_TOKEN: mio::Token = mio::Token(0);
@@ -37,19 +37,19 @@ const INTERESTS: mio::Interest =
 /// Messages that may be sent to the `SerialEventLoop`.
 #[derive(Debug)]
 pub enum SerialMsg {
-    /// Data that should be written to the PTY.
+    /// Data that should be written to the TTY.
     Input(Cow<'static, [u8]>),
 
     /// Indicates that the `SerialEventLoop` should shut down, as Alacritty is shutting down.
     Shutdown,
 
-    /// Instruction to resize the PTY.
+    /// Instruction to resize the TTY.
     Resize(WindowSize),
 }
 
 /// The main event loop.
 ///
-/// Handles all the PTY I/O and runs the PTY parser which updates terminal
+/// Handles all the TTY I/O and runs the TTY parser which updates terminal
 /// state.
 
 pub struct SerialEventLoop<U: alacritty_terminal::event::EventListener> {
@@ -76,7 +76,6 @@ where
         ref_test: bool,
     ) -> std::io::Result<SerialEventLoop<U>> {
         let (tx, rx) = mpsc::channel();
-        // let poll = Arc::new(RwLock::new(mio::Poll::new()?));
         let poll = mio::Poll::new()?;
         let registry = Arc::new(
             poll.registry()
@@ -135,19 +134,19 @@ where
         let mut unprocessed = 0;
         let mut processed = 0;
 
-        // Reserve the next terminal lock for PTY reading.
+        // Reserve the next terminal lock for TTY reading.
         let _terminal_lease = Some(self.terminal.lease());
         let mut terminal = None;
 
         loop {
-            // Read from the PTY.
+            // Read from the TTY.
             match self.tty.read(&mut buf[unprocessed..]) {
-                // This is received on Windows/macOS when no more data is readable from the PTY.
+                // This is received on Windows/macOS when no more data is readable from the TTY.
                 Ok(0) if unprocessed == 0 => break,
                 Ok(got) => unprocessed += got,
                 Err(err) => match err.kind() {
                     ErrorKind::Interrupted | ErrorKind::WouldBlock => {
-                        // Go back to mio if we're caught up on parsing and the PTY would block.
+                        // Go back to mio if we're caught up on parsing and the TTY would block.
                         if unprocessed == 0 {
                             break;
                         }
@@ -235,7 +234,7 @@ where
     }
 
     pub fn spawn(mut self) -> JoinHandle<(Self, State)> {
-        thread::spawn_named("PTY reader", move || {
+        thread::spawn_named("TTY reader", move || {
             let mut state = State::default();
             let mut buf = [0u8; READ_BUFFER_SIZE];
 
@@ -309,7 +308,7 @@ where
                                     &mut buf,
                                     pipe.as_mut(),
                                 ) {
-                                    // On Linux, a `read` on the master side of a PTY can fail
+                                    // On Linux, a `read` on the master side of a TTY can fail
                                     // with `EIO` if the client side hangs up.  In that case,
                                     // just loop back round for the inevitable `Exited` event.
                                     // This sucks, but checking the process is either racy or
@@ -319,7 +318,7 @@ where
                                         continue;
                                     }
 
-                                    error!("Error reading from PTY in event loop: {}", err);
+                                    error!("Error reading from TTY in event loop: {}", err);
                                     break 'event_loop;
                                 }
                             }
@@ -328,7 +327,7 @@ where
                                 neither_rw = false;
 
                                 if let Err(err) = self.tty_write(&mut state) {
-                                    error!("Error writing to PTY in event loop: {}", err);
+                                    error!("Error writing to TTY in event loop: {}", err);
                                     break 'event_loop;
                                 }
                             }
@@ -381,7 +380,6 @@ impl event::Notify for SerialNotifier {
         B: Into<Cow<'static, [u8]>>,
     {
         let bytes = bytes.into();
-        log::info!("notifying {:02X?}", bytes);
         // Terminal hangs if we send 0 bytes through.
         if bytes.len() == 0 {
             return;
