@@ -1,148 +1,11 @@
+use crate::serial_tty::unix::DummyTtyPort;
+use crate::serial_tty::unix::{ioctl, termios};
 use mio_serial::{Error, ErrorKind, Result};
 use nix::fcntl::FcntlArg::F_SETFL;
 use nix::fcntl::{fcntl, OFlag};
 use nix::libc::{cfmakeraw, tcgetattr, tcsetattr};
 use std::mem::MaybeUninit;
-use std::os::unix::prelude::*;
 use std::path::Path;
-use std::time::Duration;
-
-/// fork from serialport-rs
-mod ioctl {
-    use nix::ioctl_none_bad;
-    use nix::libc; // exclude ioctl_read_bad
-
-    ioctl_none_bad!(tiocexcl, libc::TIOCEXCL);
-    // ioctl_none_bad!(tiocnxcl, libc::TIOCNXCL);
-    // ioctl_read_bad!(tiocmget, libc::TIOCMGET, libc::c_int);
-    // ioctl_none_bad!(tiocsbrk, libc::TIOCSBRK);
-    // ioctl_none_bad!(tioccbrk, libc::TIOCCBRK);
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-struct DummyTtyPort {
-    fd: RawFd,
-    timeout: Duration,
-    exclusive: bool,
-    port_name: Option<String>,
-    #[cfg(any(target_os = "ios", target_os = "macos"))]
-    baud_rate: u32,
-}
-
-#[allow(path_statements)]
-const _: () = {
-    // DummyTtyPort should be same size on SerialStream.
-    assert!(
-        core::mem::size_of::<mio_serial::SerialStream>()
-            == core::mem::size_of::<DummyTtyPort>()
-    );
-};
-
-/// fork from serialport-rs
-mod termios {
-    use mio_serial::{DataBits, FlowControl, Parity, Result, StopBits};
-    use nix::libc;
-    use std::os::fd::RawFd;
-
-    pub(crate) type Termios = libc::termios;
-
-    // #[cfg(any(target_os = "ios", target_os = "macos",))]
-    pub(crate) fn get_termios(fd: RawFd) -> Result<Termios> {
-        use std::mem::MaybeUninit;
-
-        let mut termios = MaybeUninit::uninit();
-        let res = unsafe { libc::tcgetattr(fd, termios.as_mut_ptr()) };
-        nix::errno::Errno::result(res)?;
-        let mut termios = unsafe { termios.assume_init() };
-        termios.c_ispeed = self::libc::B9600;
-        termios.c_ospeed = self::libc::B9600;
-        Ok(termios)
-    }
-
-    #[cfg(any(target_os = "ios", target_os = "macos",))]
-    #[rustfmt::skip]
-    /// https://github.com/serialport/serialport-rs/pull/194
-    /// Issued for prolific + apple platform
-    pub(crate) fn set_termios(fd: RawFd, termios: &mut libc::termios, baud_rate: u32) -> Result<()> {
-
-        let mut ispeed_res = 0;
-        let mut ospeed_res = 0;
-        if baud_rate > 0 {
-            unsafe {
-                ispeed_res = libc::cfsetispeed(&mut *termios, baud_rate as libc::speed_t);
-                ospeed_res = libc::cfsetospeed(&mut *termios, baud_rate as libc::speed_t);
-            }
-        }
-        nix::errno::Errno::result(ispeed_res)?;
-        nix::errno::Errno::result(ospeed_res)?;
-    
-        let res = unsafe { libc::tcsetattr(fd, libc::TCSANOW, termios) };
-        nix::errno::Errno::result(res)?;
-    
-        Ok(())
-    }
-
-    pub(crate) fn set_parity(termios: &mut Termios, parity: Parity) {
-        match parity {
-            Parity::None => {
-                termios.c_cflag &= !(libc::PARENB | libc::PARODD);
-                termios.c_iflag &= !libc::INPCK;
-                termios.c_iflag |= libc::IGNPAR;
-            },
-            Parity::Odd => {
-                termios.c_cflag |= libc::PARENB | libc::PARODD;
-                termios.c_iflag |= libc::INPCK;
-                termios.c_iflag &= !libc::IGNPAR;
-            },
-            Parity::Even => {
-                termios.c_cflag &= !libc::PARODD;
-                termios.c_cflag |= libc::PARENB;
-                termios.c_iflag |= libc::INPCK;
-                termios.c_iflag &= !libc::IGNPAR;
-            },
-        };
-    }
-
-    pub(crate) fn set_flow_control(
-        termios: &mut Termios,
-        flow_control: FlowControl,
-    ) {
-        match flow_control {
-            FlowControl::None => {
-                termios.c_iflag &= !(libc::IXON | libc::IXOFF);
-                termios.c_cflag &= !libc::CRTSCTS;
-            },
-            FlowControl::Software => {
-                termios.c_iflag |= libc::IXON | libc::IXOFF;
-                termios.c_cflag &= !libc::CRTSCTS;
-            },
-            FlowControl::Hardware => {
-                termios.c_iflag &= !(libc::IXON | libc::IXOFF);
-                termios.c_cflag |= libc::CRTSCTS;
-            },
-        };
-    }
-
-    pub(crate) fn set_data_bits(termios: &mut Termios, data_bits: DataBits) {
-        let size = match data_bits {
-            DataBits::Five => libc::CS5,
-            DataBits::Six => libc::CS6,
-            DataBits::Seven => libc::CS7,
-            DataBits::Eight => libc::CS8,
-        };
-
-        termios.c_cflag &= !libc::CSIZE;
-        termios.c_cflag |= size;
-    }
-
-    pub(crate) fn set_stop_bits(termios: &mut Termios, stop_bits: StopBits) {
-        match stop_bits {
-            StopBits::One => termios.c_cflag &= !libc::CSTOPB,
-            StopBits::Two => termios.c_cflag |= libc::CSTOPB,
-        };
-    }
-}
 
 /// fork from serialport-rs
 /// hotfix type open for prolific CDC device on apple platform.
@@ -211,13 +74,6 @@ pub fn open(
     termios::set_stop_bits(&mut termios, config.stop_bits);
 
     termios::set_termios(fd, &mut termios, config.baud_rate)?; // Acutal patched area
-
-    unsafe {
-        use libc::{fcntl, F_GETFL, F_SETFL, O_NONBLOCK};
-
-        let res = fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
-        assert_eq!(res, 0);
-    }
 
     // rust don't allow access private member as force
     let dummy_struct = Box::new(DummyTtyPort {

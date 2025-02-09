@@ -34,6 +34,9 @@ mod prolific_apple_patch;
 
 pub mod event_loop;
 
+#[cfg(unix)]
+pub(crate) mod unix;
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct SerialTtyOptions {
     pub name: String,
@@ -183,6 +186,9 @@ pub fn new(
             println!("Not Found");
             Err(Error::new(ErrorKind::InvalidData, "Unknown SerialTty Call"))?
         };
+
+        #[cfg(unix)]
+        unix::set_nonblocking_serial(&stream);
 
         Ok(SerialTty { stream })
     } else {
