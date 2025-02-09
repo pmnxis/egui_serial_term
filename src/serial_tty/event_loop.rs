@@ -11,7 +11,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use log::error;
-use mio::Registry;
+use mio::{Registry, Waker};
 use polling::Event as PollingEvent;
 
 use alacritty_terminal::event::{self, Event, OnResize, WindowSize};
@@ -101,6 +101,7 @@ where
         SerialEventLoopSender {
             sender: self.tx.clone(),
             poller: self.registry.clone(),
+            waker: Arc::new(Waker::new(&self.registry, SERIAL_TOKEN).unwrap()),
         }
     }
 
@@ -380,6 +381,7 @@ impl event::Notify for SerialNotifier {
         B: Into<Cow<'static, [u8]>>,
     {
         let bytes = bytes.into();
+        log::info!("notifying {:02X?}", bytes);
         // Terminal hangs if we send 0 bytes through.
         if bytes.len() == 0 {
             return;
@@ -427,6 +429,7 @@ pub struct SerialEventLoopSender {
     sender: Sender<SerialMsg>,
     #[allow(dead_code)]
     poller: Arc<Registry>,
+    waker: Arc<Waker>,
 }
 
 impl SerialEventLoopSender {
@@ -434,8 +437,13 @@ impl SerialEventLoopSender {
     pub(crate) fn new(
         sender: Sender<SerialMsg>,
         poller: Arc<Registry>,
+        waker: Arc<Waker>,
     ) -> SerialEventLoopSender {
-        Self { sender, poller }
+        Self {
+            sender,
+            poller,
+            waker,
+        }
     }
 }
 
@@ -444,8 +452,9 @@ impl SerialEventLoopSender {
         self.sender
             .send(msg)
             .map_err(SerialEventLoopSendError::Send)?;
+
         // self.poller.notify().map_err(SerialEventLoopSendError::Io)
-        Ok(())
+        self.waker.wake().map_err(SerialEventLoopSendError::Io)
     }
 }
 
