@@ -1,10 +1,10 @@
 use egui::Vec2;
-use egui_term::{PtyEvent, TerminalBackend, TerminalView};
+use egui_term::{TtyEvent, TerminalBackend, TerminalView};
 use std::sync::mpsc::Receiver;
 
 pub struct App {
     terminal_backend: TerminalBackend,
-    pty_proxy_receiver: Receiver<(u64, egui_term::PtyEvent)>,
+    pty_proxy_receiver: Receiver<(u64, egui_term::TtyEvent)>,
 }
 
 impl App {
@@ -34,7 +34,7 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if let Ok((_, PtyEvent::Exit)) = self.pty_proxy_receiver.try_recv() {
+        if let Ok((_, TtyEvent::Exit)) = self.pty_proxy_receiver.try_recv() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }

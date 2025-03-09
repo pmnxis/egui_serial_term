@@ -1,10 +1,10 @@
 [package]
-name = "egui_term"
-description = "Terminal emulator widget powered by EGUI framework and alacritty terminal backend."
-authors = ["Ilya Shvyryalkin <ilyashvy@gmail.com>"]
+name = "egui_serial_term"
+description = "Serial monitor widget powered by EGUI framework and alacritty terminal backend."
+authors = ["Jinwoo Park <pmnxis@gmail.com>", "Ilya Shvyryalkin <ilyashvy@gmail.com>"]
 version = "0.1.0"
 edition = "2021"
-repository = "https://github.com/Harzu/egui_term"
+repository = "https://github.com/pmnxis/egui_serial_term"
 categories = ["gui", "terminal", "tty", "shell"]
 license = "MIT"
 

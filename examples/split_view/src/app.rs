@@ -2,7 +2,7 @@ use eframe::epaint::FontId;
 use egui::{Context, Ui};
 use egui_dock::{DockArea, DockState, NodeIndex, Style};
 use egui_term::{
-    BackendSettings, FontSettings, PtyEvent, TerminalBackend, TerminalFont,
+    BackendSettings, FontSettings, TtyEvent, TerminalBackend, TerminalFont,
     TerminalView,
 };
 use log::error;
@@ -35,7 +35,7 @@ pub struct Tab {
 }
 
 impl Tab {
-    pub fn term(ctx: Context, command_sender: Sender<(u64, PtyEvent)>) -> Self {
+    pub fn term(ctx: Context, command_sender: Sender<(u64, TtyEvent)>) -> Self {
         let id = GLOBAL_COUNTER.next();
         let backend = TerminalBackend::new(
             id,
@@ -50,7 +50,7 @@ impl Tab {
 }
 
 struct TabViewer<'a> {
-    command_sender: &'a Sender<(u64, PtyEvent)>,
+    command_sender: &'a Sender<(u64, TtyEvent)>,
 }
 
 impl egui_dock::TabViewer for TabViewer<'_> {
@@ -71,7 +71,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
     }
 
     fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
-        match self.command_sender.send((tab.id, PtyEvent::Exit)) {
+        match self.command_sender.send((tab.id, TtyEvent::Exit)) {
             Err(err) => {
                 error!("close tab {} failed: {err}", tab.id);
                 false
@@ -82,7 +82,7 @@ impl egui_dock::TabViewer for TabViewer<'_> {
 }
 
 pub struct App {
-    command_sender: Sender<(u64, PtyEvent)>,
+    command_sender: Sender<(u64, TtyEvent)>,
     dock_state: DockState<Tab>,
 }
 

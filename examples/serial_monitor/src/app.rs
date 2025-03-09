@@ -1,6 +1,6 @@
 use egui::{Color32, RichText, Vec2};
-use egui_term::{PtyEvent, SerialMonitorView, TerminalTheme};
-use egui_term::{SerialMonitorBackend, SerialTtyOptions};
+use egui_serial_term::{TtyEvent, SerialMonitorView, TerminalTheme};
+use egui_serial_term::{SerialMonitorBackend, SerialTtyOptions};
 use mio_serial::{DataBits, FlowControl, Parity, StopBits};
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -21,8 +21,8 @@ pub struct App {
     tty_list: Vec<String>,
     tty_conn: SerialTtyOptions,
     last_failed: Option<std::time::Instant>,
-    pty_proxy_sender: Sender<(u64, egui_term::PtyEvent)>,
-    pty_proxy_receiver: Receiver<(u64, egui_term::PtyEvent)>,
+    pty_proxy_sender: Sender<(u64, egui_serial_term::TtyEvent)>,
+    pty_proxy_receiver: Receiver<(u64, egui_serial_term::TtyEvent)>,
 }
 
 impl App {
@@ -53,7 +53,7 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if let Ok((_, PtyEvent::Exit)) = self.pty_proxy_receiver.try_recv() {
+        if let Ok((_, TtyEvent::Exit)) = self.pty_proxy_receiver.try_recv() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }

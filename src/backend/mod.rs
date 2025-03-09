@@ -26,7 +26,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{mpsc, Arc};
 
 pub type TerminalMode = TermMode;
-pub type PtyEvent = Event;
+pub type TtyEvent = Event;
 pub type SelectionType = AlacrittySelectionType;
 
 #[derive(Debug, Clone)]
@@ -146,7 +146,7 @@ impl SerialMonitorBackend {
     pub fn new(
         id: u64,
         app_context: egui::Context,
-        pty_event_proxy_sender: Sender<(u64, PtyEvent)>,
+        pty_event_proxy_sender: Sender<(u64, TtyEvent)>,
         serial_settings: SerialTtyOptions,
     ) -> Result<Self> {
         let config = term::Config::default();
@@ -178,7 +178,7 @@ impl SerialMonitorBackend {
                         pty_event_proxy_sender
                             .send((id, event.clone()))
                             .unwrap_or_else(|_| {
-                                panic!("pty_event_subscription_{}: sending PtyEvent is failed", id)
+                                panic!("pty_event_subscription_{}: sending TtyEvent is failed", id)
                             });
                         app_context.clone().request_repaint();
                         if let Event::Exit = event {

@@ -1,13 +1,13 @@
 use egui::{Key, Modifiers, Vec2};
-use egui_term::{
+use egui_serial_term::{
     generate_bindings, Binding, BindingAction, InputKind, KeyboardBinding,
-    PtyEvent, TerminalBackend, TerminalMode, TerminalView,
+    TtyEvent, TerminalBackend, TerminalMode, TerminalView,
 };
 use std::sync::mpsc::Receiver;
 
 pub struct App {
     terminal_backend: TerminalBackend,
-    pty_proxy_receiver: Receiver<(u64, egui_term::PtyEvent)>,
+    pty_proxy_receiver: Receiver<(u64, egui_term::TtyEvent)>,
     custom_terminal_bindings: Vec<(Binding<InputKind>, BindingAction)>,
 }
 
@@ -79,7 +79,7 @@ impl App {
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if let Ok((_, PtyEvent::Exit)) = self.pty_proxy_receiver.try_recv() {
+        if let Ok((_, TtyEvent::Exit)) = self.pty_proxy_receiver.try_recv() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }

@@ -11,7 +11,7 @@ eframe = { version = "0.31.0", default-features = false, features = [
     "persistence",   # Enable restoring app state when restarting the app.
 ] }
 log = "0.4"
-egui_term = { path = "../../" }
+egui_serial_term = { path = "../../" }
 mio-serial = { version = "5.0.6", features = ["libudev", "serde"] }
 
 # native:

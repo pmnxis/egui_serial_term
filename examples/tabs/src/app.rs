@@ -1,12 +1,12 @@
-use egui_term::{PtyEvent, TerminalBackend, TerminalView};
+use egui_term::{TtyEvent, TerminalBackend, TerminalView};
 use std::{
     collections::BTreeMap,
     sync::mpsc::{self, Receiver, Sender},
 };
 
 pub struct App {
-    command_sender: Sender<(u64, egui_term::PtyEvent)>,
-    command_receiver: Receiver<(u64, egui_term::PtyEvent)>,
+    command_sender: Sender<(u64, egui_term::TtyEvent)>,
+    command_receiver: Receiver<(u64, egui_term::TtyEvent)>,
     tab_manager: TabManager,
 }
 
@@ -29,10 +29,10 @@ impl eframe::App for App {
 
         if let Ok((tab_id, event)) = self.command_receiver.try_recv() {
             match event {
-                egui_term::PtyEvent::Exit => {
+                egui_term::TtyEvent::Exit => {
                     self.tab_manager.remove(tab_id);
                 },
-                egui_term::PtyEvent::Title(title) => {
+                egui_term::TtyEvent::Title(title) => {
                     self.tab_manager.set_title(tab_id, title);
                 },
                 _ => {},
@@ -88,7 +88,7 @@ impl TabManager {
 
     fn add(
         &mut self,
-        command_sender: Sender<(u64, PtyEvent)>,
+        command_sender: Sender<(u64, TtyEvent)>,
         ctx: egui::Context,
     ) {
         let id = self.tabs.len() as u64;
@@ -156,7 +156,7 @@ struct Tab {
 impl Tab {
     fn new(
         ctx: egui::Context,
-        command_sender: Sender<(u64, PtyEvent)>,
+        command_sender: Sender<(u64, TtyEvent)>,
         id: u64,
     ) -> Self {
         let system_shell = std::env::var("SHELL")

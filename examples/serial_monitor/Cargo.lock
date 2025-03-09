@@ -673,7 +673,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "egui_term"
+name = "egui_serial_term"
 version = "0.1.0"
 dependencies = [
  "alacritty_terminal",
@@ -2187,7 +2187,7 @@ version = "0.1.0"
 dependencies = [
  "eframe",
  "egui",
- "egui_term",
+ "egui_serial_term",
  "env_logger",
  "log",
  "mio-serial",
