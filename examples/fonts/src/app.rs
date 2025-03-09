@@ -1,8 +1,9 @@
-use egui::{FontId, Vec2};
-use egui_term::{
-    FontSettings, TtyEvent, TerminalBackend, TerminalFont, TerminalView,
+use egui::{Color32, FontId, Vec2};
+use egui_serial_term::{
+    FontSettings, SerialMonitorView, TerminalFont, TtyEvent,
 };
-use std::sync::{mpsc::Receiver, Arc};
+use egui_serial_term::{SerialMonitorBackend, SimpleSerialMonitorManager};
+use std::sync::{mpsc::Receiver, mpsc::Sender, Arc};
 
 const TERM_FONT_JET_BRAINS_NAME: &str = "jet brains";
 const TERM_FONT_3270_NAME: &str = "3270";
@@ -47,83 +48,94 @@ fn setup_font(ctx: &egui::Context, name: &str) {
 }
 
 pub struct App {
-    terminal_backend: TerminalBackend,
+    serial_monitor_backend: Option<SerialMonitorBackend>,
+    simple_manager: SimpleSerialMonitorManager,
     font_size: f32,
-    pty_proxy_receiver: Receiver<(u64, egui_term::TtyEvent)>,
+    tty_proxy_sender: Sender<(u64, egui_serial_term::TtyEvent)>,
+    tty_proxy_receiver: Receiver<(u64, egui_serial_term::TtyEvent)>,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         setup_font(&cc.egui_ctx, TERM_FONT_JET_BRAINS_NAME);
-        let system_shell = std::env::var("SHELL")
-            .expect("SHELL variable is not defined")
-            .to_string();
+        let (tty_proxy_sender, tty_proxy_receiver) = std::sync::mpsc::channel();
 
-        let (pty_proxy_sender, pty_proxy_receiver) = std::sync::mpsc::channel();
-        let terminal_backend = TerminalBackend::new(
-            0,
-            cc.egui_ctx.clone(),
-            pty_proxy_sender.clone(),
-            egui_term::BackendSettings {
-                shell: system_shell,
-                ..Default::default()
-            },
-        )
-        .unwrap();
+        let simple_manager: SimpleSerialMonitorManager =
+            SimpleSerialMonitorManager::new(None);
 
         Self {
-            terminal_backend,
+            serial_monitor_backend: None,
+
             font_size: 14.0,
-            pty_proxy_receiver,
+            simple_manager,
+            tty_proxy_sender,
+            tty_proxy_receiver,
         }
     }
 }
 
 impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if let Ok((_, TtyEvent::Exit)) = self.pty_proxy_receiver.try_recv() {
+        if let Ok((_, TtyEvent::Exit)) = self.tty_proxy_receiver.try_recv() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
 
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button(TERM_FONT_JET_BRAINS_NAME).clicked() {
-                    setup_font(ctx, TERM_FONT_JET_BRAINS_NAME);
-                }
+            ui.vertical(|ui| {
+                ui.horizontal(|ui| {
+                    self.simple_manager.add_bar_style(
+                        ctx,
+                        ui,
+                        &mut self.serial_monitor_backend,
+                        &self.tty_proxy_sender,
+                    );
+                });
+                ui.horizontal(|ui| {
+                    if ui.button(TERM_FONT_JET_BRAINS_NAME).clicked() {
+                        setup_font(ctx, TERM_FONT_JET_BRAINS_NAME);
+                    }
 
-                if ui.button(TERM_FONT_3270_NAME).clicked() {
-                    setup_font(ctx, TERM_FONT_3270_NAME);
-                }
+                    if ui.button(TERM_FONT_3270_NAME).clicked() {
+                        setup_font(ctx, TERM_FONT_3270_NAME);
+                    }
 
-                if ui.button(TERM_FONT_CJK_NAME).clicked() {
-                    setup_font(ctx, TERM_FONT_CJK_NAME);
-                }
-            });
+                    if ui.button(TERM_FONT_CJK_NAME).clicked() {
+                        setup_font(ctx, TERM_FONT_CJK_NAME);
+                    }
+                });
 
-            ui.horizontal(|ui| {
-                if ui.button("+ size").clicked() {
-                    self.font_size += 1.0;
-                }
+                ui.horizontal(|ui| {
+                    if ui.button("+ size").clicked() {
+                        self.font_size += 1.0;
+                    }
 
-                if ui.button("- size").clicked() {
-                    self.font_size -= 1.0;
-                }
+                    if ui.button("- size").clicked() {
+                        self.font_size -= 1.0;
+                    }
+                });
             });
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            let terminal = TerminalView::new(ui, &mut self.terminal_backend)
-                .set_focus(true)
-                .set_font(TerminalFont::new(FontSettings {
-                    font_type: FontId::proportional(self.font_size),
-                }))
-                .set_size(Vec2::new(
-                    ui.available_width(),
-                    ui.available_height(),
-                ));
+            if let Some(serial_monitor_backend) =
+                &mut self.serial_monitor_backend
+            {
+                let terminal =
+                    SerialMonitorView::new(ui, serial_monitor_backend)
+                        .set_focus(true)
+                        .set_font(TerminalFont::new(FontSettings {
+                            font_type: FontId::proportional(self.font_size),
+                        }))
+                        .set_size(Vec2::new(
+                            ui.available_width(),
+                            ui.available_height(),
+                        ));
 
-            ui.add(terminal);
+                ui.add(terminal);
+            } else if self.simple_manager.is_failed_to_connect() {
+                ui.colored_label(Color32::RED, "⚠ Failed to open!");
+            }
         });
     }
 }

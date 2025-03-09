@@ -1,8 +1,8 @@
 use crate::serial_tty::unix::DummyTtyPort;
 use crate::serial_tty::unix::{ioctl, termios};
 use mio_serial::{Error, ErrorKind, Result};
-use nix::fcntl::FcntlArg::F_SETFL;
-use nix::fcntl::{fcntl, OFlag};
+#[allow(unused_imports)]
+use nix::fcntl::{fcntl, FcntlArg::F_SETFL, OFlag};
 use nix::libc::{cfmakeraw, tcgetattr, tcsetattr};
 use std::mem::MaybeUninit;
 use std::path::Path;
@@ -65,7 +65,8 @@ pub fn open(
     }
 
     // clear O_NONBLOCK flag
-    fcntl(fd, F_SETFL(nix::fcntl::OFlag::empty()))?;
+    // but comment below line for using O_NONBLOCK
+    // fcntl(fd, F_SETFL(nix::fcntl::OFlag::empty()))?;
 
     let mut termios = termios::get_termios(fd)?;
     termios::set_parity(&mut termios, config.parity);

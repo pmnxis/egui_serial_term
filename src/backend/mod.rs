@@ -146,7 +146,7 @@ impl SerialMonitorBackend {
     pub fn new(
         id: u64,
         app_context: egui::Context,
-        pty_event_proxy_sender: Sender<(u64, TtyEvent)>,
+        tty_event_proxy_sender: Sender<(u64, TtyEvent)>,
         serial_settings: SerialTtyOptions,
     ) -> Result<Self> {
         let config = term::Config::default();
@@ -170,15 +170,15 @@ impl SerialMonitorBackend {
             SerialEventLoop::new(term.clone(), event_proxy, tty, false, false)?;
         let notifier = SerialNotifier(serial_event_loop.channel());
         let url_regex = RegexSearch::new(r#"(ipfs:|ipns:|magnet:|mailto:|gemini://|gopher://|https://|http://|news:|file://|git://|ssh:|ftp://)[^\u{0000}-\u{001F}\u{007F}-\u{009F}<>"\s{-}\^⟨⟩`]+"#).unwrap();
-        let _pty_event_loop_thread = serial_event_loop.spawn();
-        let _pty_event_subscription = std::thread::Builder::new()
-                .name(format!("pty_event_subscription_{}", id))
+        let _tty_event_loop_thread = serial_event_loop.spawn();
+        let _tty_event_subscription = std::thread::Builder::new()
+                .name(format!("tty_event_subscription_{}", id))
                 .spawn(move || loop {
                     if let Ok(event) = event_receiver.recv() {
-                        pty_event_proxy_sender
+                        tty_event_proxy_sender
                             .send((id, event.clone()))
                             .unwrap_or_else(|_| {
-                                panic!("pty_event_subscription_{}: sending TtyEvent is failed", id)
+                                panic!("tty_event_subscription_{}: sending TtyEvent is failed", id)
                             });
                         app_context.clone().request_repaint();
                         if let Event::Exit = event {

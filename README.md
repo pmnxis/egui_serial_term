@@ -36,6 +36,9 @@ This widget tested on MacOS and Linux and is not tested on Windows.
 You can also look at [examples](./examples) directory for more information about widget using.
 
 - [serial_monitor](./examples/serial_monitor/) - The basic example of serial monitor.
+- [custom_bindings](./examples/custom_bindings/) - The example that show how you can add custom keyboard or mouse bindings to your terminal emulator app.
+- [themes](./examples/themes/) - The example that show how you can change terminal color scheme.
+- [fonts](./examples/fonts/) - The examples that show how you can change font type or font size in your terminal emulator app.
 
 ## Dependencies
 

@@ -13,7 +13,7 @@ eframe = { version = "0.31.0", default-features = false, features = [
 ] }
 
 log = "0.4"
-egui_term = { path = "../../" }
+egui_serial_term = { path = "../../" }
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
