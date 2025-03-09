@@ -2,7 +2,7 @@
 
 # egui_serial_term
 
-![GitHub License](https://img.shields.io/github/license/pmxnis/egui_serial_term)
+![GitHub License](https://img.shields.io/github/license/pmnxis/egui_serial_term)
 
 Terminal emulator widget powered by EGUI framework and alacritty terminal backend.
 
